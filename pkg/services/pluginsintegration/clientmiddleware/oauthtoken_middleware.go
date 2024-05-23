@@ -39,25 +39,37 @@ type OAuthTokenMiddleware struct {
 
 func (m *OAuthTokenMiddleware) applyToken(ctx context.Context, pCtx backend.PluginContext, req interface{}) error {
 	reqCtx := contexthandler.FromContext(ctx)
+
 	// if request not for a datasource or no HTTP request context skip middleware
-	if req == nil || pCtx.DataSourceInstanceSettings == nil || reqCtx == nil || reqCtx.Req == nil {
+	if req == nil || (pCtx.DataSourceInstanceSettings == nil && pCtx.AppInstanceSettings == nil) || reqCtx == nil || reqCtx.Req == nil {
 		return nil
 	}
 
-	settings := pCtx.DataSourceInstanceSettings
-	jsonDataBytes, err := simplejson.NewJson(settings.JSONData)
-	if err != nil {
-		return err
+	var canOAuthPassEnable bool
+
+	if pCtx.DataSourceInstanceSettings == nil {
+		settings := pCtx.AppInstanceSettings
+		jsonDataBytes, err := simplejson.NewJson(settings.JSONData)
+		if err != nil {
+			return err
+		}
+		canOAuthPassEnable = jsonDataBytes != nil && jsonDataBytes.Get("oauthPassThru").MustBool()
+	} else {
+		settings := pCtx.DataSourceInstanceSettings
+		jsonDataBytes, err := simplejson.NewJson(settings.JSONData)
+		if err != nil {
+			return err
+		}
+		ds := &datasources.DataSource{
+			ID:       settings.ID,
+			OrgID:    pCtx.OrgID,
+			JsonData: jsonDataBytes,
+			Updated:  settings.Updated,
+		}
+		canOAuthPassEnable = m.oAuthTokenService.IsOAuthPassThruEnabled(ds)
 	}
 
-	ds := &datasources.DataSource{
-		ID:       settings.ID,
-		OrgID:    pCtx.OrgID,
-		JsonData: jsonDataBytes,
-		Updated:  settings.Updated,
-	}
-
-	if m.oAuthTokenService.IsOAuthPassThruEnabled(ds) {
+	if canOAuthPassEnable {
 		if token := m.oAuthTokenService.GetCurrentOAuthToken(ctx, reqCtx.SignedInUser); token != nil {
 			authorizationHeader := fmt.Sprintf("%s %s", token.Type(), token.AccessToken)
 			idTokenHeader := ""
