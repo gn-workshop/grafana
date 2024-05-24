@@ -57,7 +57,7 @@ func (m *OAuthTokenMiddleware) applyToken(ctx context.Context, pCtx backend.Plug
 		logger := log.New("applyToken")
 		canOAuthPassEnable = jsonDataBytes != nil && jsonDataBytes.Get("oauthPassThru").MustBool()
 		oauthStr := fmt.Sprintf("canOAuthPassEnable %+v", canOAuthPassEnable)
-		logger.Debug(oauthStr)
+		logger.Info(oauthStr)
 	} else {
 		settings := pCtx.DataSourceInstanceSettings
 		jsonDataBytes, err := simplejson.NewJson(settings.JSONData)
