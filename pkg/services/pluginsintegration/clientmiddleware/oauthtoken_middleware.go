@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/contexthandler"
 	"github.com/grafana/grafana/pkg/services/datasources"
 	"github.com/grafana/grafana/pkg/services/oauthtoken"
+	"github.com/grafana/grafana/pkg/infra/log"
 )
 
 // NewOAuthTokenMiddleware creates a new plugins.ClientMiddleware that will
@@ -53,7 +54,10 @@ func (m *OAuthTokenMiddleware) applyToken(ctx context.Context, pCtx backend.Plug
 		if err != nil {
 			return err
 		}
+		logger := log.New("applyToken")
 		canOAuthPassEnable = jsonDataBytes != nil && jsonDataBytes.Get("oauthPassThru").MustBool()
+		oauthStr := fmt.Sprintf("canOAuthPassEnable %+v", canOAuthPassEnable)
+		logger.Debug(oauthStr)
 	} else {
 		settings := pCtx.DataSourceInstanceSettings
 		jsonDataBytes, err := simplejson.NewJson(settings.JSONData)
