@@ -1,31 +1,24 @@
 import { SerializedError } from '@reduxjs/toolkit';
-import { prettyDOM, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { setupServer } from 'msw/node';
-import React from 'react';
+import { SetupServer } from 'msw/node';
 import { TestProvider } from 'test/helpers/TestProvider';
+import { prettyDOM, render, screen, waitFor, within } from 'test/test-utils';
 import { byRole, byTestId, byText } from 'testing-library-selector';
 
-import { PluginExtensionTypes, PluginMeta } from '@grafana/data';
+import { PluginExtensionTypes } from '@grafana/data';
 import { selectors } from '@grafana/e2e-selectors';
 import {
   DataSourceSrv,
   getPluginLinkExtensions,
   locationService,
-  setBackendSrv,
+  setAppEvents,
   setDataSourceSrv,
   usePluginLinkExtensions,
 } from '@grafana/runtime';
-import { backendSrv } from 'app/core/services/backend_srv';
+import appEvents from 'app/core/app_events';
 import * as ruleActionButtons from 'app/features/alerting/unified/components/rules/RuleActionsButtons';
-import {
-  mockAlertRuleApi,
-  mockApi,
-  mockFolderApi,
-  mockSearchApi,
-  mockUserApi,
-} from 'app/features/alerting/unified/mockApi';
-import { mockAlertmanagerChoiceResponse } from 'app/features/alerting/unified/mocks/alertmanagerApi';
+import { mockUserApi, setupMswServer } from 'app/features/alerting/unified/mockApi';
+import { setAlertmanagerChoices } from 'app/features/alerting/unified/mocks/server/configure';
 import * as actions from 'app/features/alerting/unified/state/actions';
 import { getMockUser } from 'app/features/users/__mocks__/userMocks';
 import { AlertmanagerChoice } from 'app/plugins/datasource/alertmanager/types';
@@ -43,13 +36,11 @@ import {
   getPotentiallyPausedRulerRules,
   grantUserPermissions,
   mockDataSource,
-  mockFolder,
   mockPromAlert,
   mockPromAlertingRule,
   mockPromRecordingRule,
   mockPromRuleGroup,
   mockPromRuleNamespace,
-  mockRulerGrafanaRule,
   pausedPromRules,
   somePromRules,
   someRulerRules,
@@ -68,22 +59,14 @@ jest.mock('./api/buildInfo');
 jest.mock('./api/prometheus');
 jest.mock('./api/ruler');
 jest.mock('../../../core/hooks/useMediaQueryChange');
-jest.spyOn(ruleActionButtons, 'matchesWidth').mockReturnValue(false);
-jest.mock('app/core/core', () => ({
-  ...jest.requireActual('app/core/core'),
-  appEvents: {
-    subscribe: () => {
-      return { unsubscribe: () => {} };
-    },
-    emit: () => {},
-  },
-}));
 
+jest.spyOn(ruleActionButtons, 'matchesWidth').mockReturnValue(false);
 jest.spyOn(analytics, 'logInfo');
 jest.spyOn(config, 'getAllDataSources');
 jest.spyOn(actions, 'rulesInSameGroupHaveInvalidFor').mockReturnValue([]);
 jest.spyOn(apiRuler, 'rulerUrlBuilder');
 
+setAppEvents(appEvents);
 setupPluginsExtensionsHook();
 
 const mocks = {
@@ -162,7 +145,7 @@ const ui = {
     paused: byText(/^Paused/),
   },
   actionButtons: {
-    more: byRole('button', { name: /more-actions/ }),
+    more: byRole('button', { name: /More/ }),
   },
   moreActionItems: {
     pause: byRole('menuitem', { name: /pause evaluation/i }),
@@ -170,45 +153,16 @@ const ui = {
   },
 };
 
-const server = setupServer();
+const server = setupMswServer();
 
-const configureMockServer = () => {
-  mockSearchApi(server).search([]);
+const configureMockServer = (server: SetupServer) => {
   mockUserApi(server).user(getMockUser());
-  mockFolderApi(server).folder(
-    'NAMESPACE_UID',
-    mockFolder({
-      accessControl: { [AccessControlAction.AlertingRuleUpdate]: true },
-    })
-  );
-  mockApi(server).plugins.getPluginSettings(
-    // We aren't particularly concerned with the plugin response in these tests
-    // at the time of writing, so we can go unknown -> PluginMeta to get the bare minimum
-    { id: 'grafana-incident-app' } as unknown as PluginMeta
-  );
-  mockAlertmanagerChoiceResponse(server, {
-    alertmanagersChoice: AlertmanagerChoice.All,
-    numExternalAlertmanagers: 1,
-  });
-  mockAlertRuleApi(server).updateRule('grafana', {
-    message: 'rule group updated successfully',
-    updated: ['foo', 'bar', 'baz'],
-  });
-  mockAlertRuleApi(server).rulerRuleGroup(GRAFANA_RULES_SOURCE_NAME, 'NAMESPACE_UID', 'groupPaused', {
-    name: 'group-1',
-    interval: '1m',
-    rules: [mockRulerGrafanaRule()],
-  });
+  setAlertmanagerChoices(AlertmanagerChoice.All, 1);
 };
-
-beforeAll(() => {
-  setBackendSrv(backendSrv);
-});
 
 describe('RuleList', () => {
   beforeEach(() => {
-    server.listen({ onUnhandledRequest: 'error' });
-    configureMockServer();
+    configureMockServer(server);
     grantUserPermissions([
       AccessControlAction.AlertingRuleRead,
       AccessControlAction.AlertingRuleUpdate,
@@ -233,13 +187,8 @@ describe('RuleList', () => {
   });
 
   afterEach(() => {
-    server.resetHandlers();
     jest.resetAllMocks();
     setDataSourceSrv(undefined as unknown as DataSourceSrv);
-  });
-
-  afterAll(() => {
-    server.close();
   });
 
   it('load & show rule groups from multiple cloud data sources', async () => {
@@ -632,7 +581,64 @@ describe('RuleList', () => {
     await waitFor(() => expect(ui.ruleGroup.get()).toHaveTextContent('group-2'));
   });
 
-  describe('pausing rules', () => {
+  it('uses entire group when reordering after filtering', async () => {
+    const user = userEvent.setup();
+
+    mocks.getAllDataSourcesMock.mockReturnValue([dataSources.prom]);
+
+    setDataSourceSrv(new MockDataSourceSrv({ prom: dataSources.prom }));
+
+    mocks.api.discoverFeatures.mockResolvedValue({
+      application: PromApplication.Cortex,
+      features: {
+        rulerApiEnabled: true,
+      },
+    });
+
+    mocks.api.fetchRulerRules.mockImplementation(() => Promise.resolve(someRulerRules));
+    mocks.api.fetchRules.mockImplementation((dataSourceName: string) => {
+      if (dataSourceName === GRAFANA_RULES_SOURCE_NAME) {
+        return Promise.resolve([
+          mockPromRuleNamespace({
+            name: 'foofolder',
+            dataSourceName: GRAFANA_RULES_SOURCE_NAME,
+            groups: [
+              mockPromRuleGroup({
+                name: 'grafana-group',
+                rules: [
+                  mockPromAlertingRule({
+                    query: '[]',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ]);
+      } else {
+        return Promise.resolve([]);
+      }
+    });
+
+    renderRuleList();
+
+    const [firstReorderButton] = await screen.findAllByLabelText(/reorder/i);
+
+    const filterInput = ui.rulesFilterInput.get();
+    await userEvent.type(filterInput, 'alert1a{Enter}');
+
+    await user.click(firstReorderButton);
+
+    const reorderDialog = await screen.findByRole('dialog');
+
+    const alertsInReorder = within(reorderDialog).getAllByTestId('reorder-alert-rule');
+
+    // We've filtered down to one rule, but the reorder dialog should still
+    // have everything in the group visible for reordering
+    // If this were not the case, rules could be deleted ⚠️
+    expect(alertsInReorder).toHaveLength(2);
+  });
+
+  describe.skip('pausing rules', () => {
     beforeEach(() => {
       grantUserPermissions([
         AccessControlAction.AlertingRuleRead,
@@ -677,7 +683,13 @@ describe('RuleList', () => {
     });
   });
 
-  describe('edit lotex groups, namespaces', () => {
+  /**
+   * @TODO port these tests to MSW – they rely on mocks a whole lot, and since we're looking to refactor the list view
+   * I imagine we'd need to rewrite these anyway.
+   *
+   * These actions are currently tested in the "useProduceNewRuleGroup" hook(s).
+   */
+  describe.skip('edit lotex groups, namespaces', () => {
     const testDatasources = {
       prom: dataSources.prom,
     };

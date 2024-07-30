@@ -7,24 +7,26 @@ import (
 	"time"
 
 	"github.com/grafana/grafana/pkg/infra/db"
-	"github.com/grafana/grafana/pkg/infra/log"
+	"github.com/grafana/grafana/pkg/plugins"
 	"github.com/grafana/grafana/pkg/services/accesscontrol"
-	"github.com/grafana/grafana/pkg/services/accesscontrol/acimpl"
+	"github.com/grafana/grafana/pkg/services/accesscontrol/pluginutils"
 	"github.com/grafana/grafana/pkg/services/dashboards"
 	"github.com/grafana/grafana/pkg/services/featuremgmt"
 	"github.com/grafana/grafana/pkg/services/org"
 	"github.com/grafana/grafana/pkg/services/serviceaccounts"
 	"github.com/grafana/grafana/pkg/services/team"
 	"github.com/grafana/grafana/pkg/services/user"
+	"github.com/grafana/grafana/pkg/setting"
 	"github.com/grafana/grafana/pkg/util"
 )
 
-func NewStore(sql db.DB, features featuremgmt.FeatureToggles) *store {
-	store := &store{sql: sql, features: features}
+func NewStore(cfg *setting.Cfg, sql db.DB, features featuremgmt.FeatureToggles) *store {
+	store := &store{cfg: cfg, sql: sql, features: features}
 	return store
 }
 
 type store struct {
+	cfg      *setting.Cfg
 	sql      db.DB
 	features featuremgmt.FeatureToggles
 }
@@ -270,7 +272,7 @@ func (s *store) setResourcePermission(
 		return nil, err
 	}
 
-	if err := s.createPermissions(sess, role.ID, cmd.Resource, cmd.ResourceID, cmd.ResourceAttribute, missing, cmd.Permission); err != nil {
+	if err := s.createPermissions(sess, role.ID, cmd, missing); err != nil {
 		return nil, err
 	}
 
@@ -661,12 +663,17 @@ func (s *store) getPermissions(sess *db.Session, resource, resourceID, resourceA
 	return result, nil
 }
 
-func (s *store) createPermissions(sess *db.Session, roleID int64, resource, resourceID, resourceAttribute string, missingActions map[string]struct{}, permission string) error {
+func (s *store) createPermissions(sess *db.Session, roleID int64, cmd SetResourcePermissionCommand, missingActions map[string]struct{}) error {
 	permissions := make([]accesscontrol.Permission, 0, len(missingActions))
+
+	resource := cmd.Resource
+	resourceID := cmd.ResourceID
+	resourceAttribute := cmd.ResourceAttribute
+	permission := cmd.Permission
 	/*
 		Add ACTION SET of managed permissions to in-memory store
 	*/
-	if s.features.IsEnabled(context.TODO(), featuremgmt.FlagAccessActionSets) && permission != "" {
+	if s.shouldStoreActionSet(resource, permission) {
 		actionSetName := GetActionSetName(resource, permission)
 		p := managedPermission(actionSetName, resource, resourceID, resourceAttribute)
 		p.RoleID = roleID
@@ -676,30 +683,37 @@ func (s *store) createPermissions(sess *db.Session, roleID int64, resource, reso
 		permissions = append(permissions, p)
 	}
 
-	// If there are no missing actions for the resource (in case of access level downgrade or resource removal), we don't need to insert any prior actions
-	// we still want to add the action set in case of access level downgrade, but not in case of resource removal (when permission == "")
-	if len(missingActions) == 0 {
-		if s.features.IsEnabled(context.TODO(), featuremgmt.FlagAccessActionSets) && permission != "" {
-			if _, err := sess.InsertMulti(&permissions); err != nil {
-				return err
-			}
-		}
+	// If there are no missing actions for the resource (in case of access level downgrade or resource removal), we don't need to insert any actions
+	// we still want to add the action set (when permission != "")
+	if len(missingActions) == 0 && !s.shouldStoreActionSet(resource, permission) {
 		return nil
 	}
 
-	for action := range missingActions {
-		p := managedPermission(action, resource, resourceID, resourceAttribute)
-		p.RoleID = roleID
-		p.Created = time.Now()
-		p.Updated = time.Now()
-		p.Kind, p.Attribute, p.Identifier = p.SplitScope()
-		permissions = append(permissions, p)
+	// if we have actionset feature enabled and are only working with action sets
+	// skip adding the missing actions to the permissions table
+	if !(s.shouldStoreActionSet(resource, permission) && s.cfg.RBAC.OnlyStoreAccessActionSets) {
+		for action := range missingActions {
+			p := managedPermission(action, resource, resourceID, resourceAttribute)
+			p.RoleID = roleID
+			p.Created = time.Now()
+			p.Updated = time.Now()
+			p.Kind, p.Attribute, p.Identifier = p.SplitScope()
+			permissions = append(permissions, p)
+		}
 	}
 
 	if _, err := sess.InsertMulti(&permissions); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s *store) shouldStoreActionSet(resource, permission string) bool {
+	if !(s.features.IsEnabled(context.TODO(), featuremgmt.FlagAccessActionSets) && permission != "") {
+		return false
+	}
+	actionSetName := GetActionSetName(resource, permission)
+	return isFolderOrDashboardAction(actionSetName)
 }
 
 func deletePermissions(sess *db.Session, ids []int64) error {
@@ -729,42 +743,29 @@ func managedPermission(action, resource string, resourceID, resourceAttribute st
 	}
 }
 
-/*
-ACTION SETS
-Stores actionsets IN MEMORY
-*/
-// ActionSet is a struct that represents a set of actions that can be performed on a resource.
-// An example of an action set is "folders:edit" which represents the set of RBAC actions that are granted by edit access to a folder.
-
-type ActionSetService interface {
-	accesscontrol.ActionResolver
-
-	GetActionSet(actionName string) []string
-	//GetActionSetName(resource, permission string) string
-	StoreActionSet(resource, permission string, actions []string)
-}
-
-type ActionSet struct {
-	Action  string   `json:"action"`
-	Actions []string `json:"actions"`
-}
-
-// InMemoryActionSets is an in-memory implementation of the ActionSetService.
-type InMemoryActionSets struct {
-	log                log.Logger
-	actionSetToActions map[string][]string
-	actionToActionSets map[string][]string
-}
-
-// NewActionSetService returns a new instance of InMemoryActionSetService.
-func NewActionSetService(a *acimpl.AccessControl) *InMemoryActionSets {
-	actionSets := &InMemoryActionSets{
-		log:                log.New("resourcepermissions.actionsets"),
-		actionSetToActions: make(map[string][]string),
-		actionToActionSets: make(map[string][]string),
+// ResolveActionPrefix returns all action sets that include at least one action with the specified prefix
+func (s *InMemoryActionSets) ResolveActionPrefix(prefix string) []string {
+	if prefix == "" {
+		return []string{}
 	}
-	a.RegisterActionResolver(actionSets)
-	return actionSets
+
+	sets := make([]string, 0, len(s.actionSetToActions))
+
+	for set, actions := range s.actionSetToActions {
+		// Only use action sets for folders and dashboards for now
+		// We need to verify that action sets for other resources do not share names with actions (eg, `datasources:read`)
+		if !isFolderOrDashboardAction(set) {
+			continue
+		}
+		for _, action := range actions {
+			if strings.HasPrefix(action, prefix) {
+				sets = append(sets, set)
+				break
+			}
+		}
+	}
+
+	return sets
 }
 
 func (s *InMemoryActionSets) ResolveAction(action string) []string {
@@ -796,7 +797,17 @@ func isFolderOrDashboardAction(action string) bool {
 	return strings.HasPrefix(action, dashboards.ScopeDashboardsRoot) || strings.HasPrefix(action, dashboards.ScopeFoldersRoot)
 }
 
+// ExpandActionSets takes a set of permissions that might include some action set permissions, and returns a set of permissions with action sets expanded into underlying permissions
 func (s *InMemoryActionSets) ExpandActionSets(permissions []accesscontrol.Permission) []accesscontrol.Permission {
+	actionMatcher := func(_ string) bool {
+		return true
+	}
+	return s.ExpandActionSetsWithFilter(permissions, actionMatcher)
+}
+
+// ExpandActionSetsWithFilter works like ExpandActionSets, but it also takes a function for action filtering. When action sets are expanded into the underlying permissions,
+// only those permissions whose action is matched by actionMatcher are included.
+func (s *InMemoryActionSets) ExpandActionSetsWithFilter(permissions []accesscontrol.Permission, actionMatcher func(action string) bool) []accesscontrol.Permission {
 	var expandedPermissions []accesscontrol.Permission
 	for _, permission := range permissions {
 		resolvedActions := s.ResolveActionSet(permission.Action)
@@ -805,6 +816,9 @@ func (s *InMemoryActionSets) ExpandActionSets(permissions []accesscontrol.Permis
 			continue
 		}
 		for _, action := range resolvedActions {
+			if !actionMatcher(action) {
+				continue
+			}
 			permission.Action = action
 			expandedPermissions = append(expandedPermissions, permission)
 		}
@@ -812,22 +826,12 @@ func (s *InMemoryActionSets) ExpandActionSets(permissions []accesscontrol.Permis
 	return expandedPermissions
 }
 
-// GetActionSet returns the action set for the given action.
-func (s *InMemoryActionSets) GetActionSet(actionName string) []string {
-	actionSet, ok := s.actionSetToActions[actionName]
-	if !ok {
-		return nil
-	}
-	return actionSet
-}
-
-func (s *InMemoryActionSets) StoreActionSet(resource, permission string, actions []string) {
-	name := GetActionSetName(resource, permission)
+func (s *InMemoryActionSets) StoreActionSet(name string, actions []string) {
 	actionSet := &ActionSet{
 		Action:  name,
 		Actions: actions,
 	}
-	s.actionSetToActions[actionSet.Action] = actions
+	s.actionSetToActions[actionSet.Action] = append(s.actionSetToActions[actionSet.Action], actions...)
 
 	for _, action := range actions {
 		if _, ok := s.actionToActionSets[action]; !ok {
@@ -836,6 +840,21 @@ func (s *InMemoryActionSets) StoreActionSet(resource, permission string, actions
 		s.actionToActionSets[action] = append(s.actionToActionSets[action], actionSet.Action)
 	}
 	s.log.Debug("stored action set", "action set name", actionSet.Action)
+}
+
+// RegisterActionSets allow the caller to expand the existing action sets with additional permissions
+// This is intended to be used by plugins, and currently supports extending folder and dashboard action sets
+func (s *InMemoryActionSets) RegisterActionSets(ctx context.Context, pluginID string, registrations []plugins.ActionSet) error {
+	if !s.features.IsEnabled(ctx, featuremgmt.FlagAccessActionSets) || !s.features.IsEnabled(ctx, featuremgmt.FlagAccessControlOnCall) {
+		return nil
+	}
+	for _, reg := range registrations {
+		if err := pluginutils.ValidatePluginActionSet(pluginID, reg); err != nil {
+			return err
+		}
+		s.StoreActionSet(reg.Action, reg.Actions)
+	}
+	return nil
 }
 
 // GetActionSetName function creates an action set from a list of actions and stores it inmemory.

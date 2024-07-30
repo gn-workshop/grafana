@@ -1,7 +1,8 @@
 import { auto } from '@popperjs/core';
 import { action } from '@storybook/addon-actions';
 import { Meta, StoryFn } from '@storybook/react';
-import React, { useState } from 'react';
+import Chance from 'chance';
+import { useState } from 'react';
 
 import { SelectableValue, toIconName } from '@grafana/data';
 import { Icon, Select, AsyncSelect, MultiSelect, AsyncMultiSelect } from '@grafana/ui';
@@ -11,6 +12,27 @@ import { getAvailableIcons } from '../../types';
 import mdx from './Select.mdx';
 import { generateOptions, generateThousandsOfOptions } from './mockOptions';
 import { SelectCommonProps } from './types';
+
+const chance = new Chance();
+
+const manyGroupedOptions = [
+  { label: 'Foo', value: '1' },
+  {
+    label: 'Animals',
+    options: new Array(100).fill(0).map((_, i) => {
+      const animal = chance.animal();
+      return { label: animal, value: animal };
+    }),
+  },
+  {
+    label: 'People',
+    options: new Array(100).fill(0).map((_, i) => {
+      const person = chance.name();
+      return { label: person, value: person };
+    }),
+  },
+  { label: 'Bar', value: '3' },
+];
 
 const meta: Meta = {
   title: 'Forms/Select',
@@ -229,7 +251,28 @@ export const MultiSelectWithOptionGroups: StoryFn = (args) => {
               { label: 'Eagle', value: '13' },
             ],
           },
+          { label: 'Bar', value: '3' },
         ]}
+        value={value}
+        onChange={(v) => {
+          setValue(v.map((v) => v.value!));
+          action('onChange')(v);
+        }}
+        prefix={getPrefix(args.icon)}
+        {...args}
+      />
+    </>
+  );
+};
+
+export const MultiSelectWithOptionGroupsVirtualized: StoryFn = (args) => {
+  const [value, setValue] = useState<string[]>();
+
+  return (
+    <>
+      <MultiSelect
+        options={manyGroupedOptions}
+        virtualized
         value={value}
         onChange={(v) => {
           setValue(v.map((v) => v.value!));
