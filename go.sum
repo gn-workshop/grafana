@@ -1952,6 +1952,8 @@ github.com/ghodss/yaml v1.0.0/go.mod h1:4dBDuWmgqj2HViK6kFavaiC9ZROes6MMH2rRYeME
 github.com/gin-contrib/sse v0.1.0/go.mod h1:RHrZQHXnP2xjPF+u1gW/2HnVO7nvIa9PG3Gm+fLHvGI=
 github.com/gin-gonic/gin v1.6.3/go.mod h1:75u5sXoLsGZoRN5Sgbi1eraJ4GU3++wFwWzhwvtwp4M=
 github.com/gin-gonic/gin v1.7.3/go.mod h1:jD2toBW3GZUr5UMcdrwQA10I7RuaFOl/SGeDjXkfUtY=
+github.com/gn-workshop/prometheus-alertmanager v0.25.1-0.20240731035447-45bc3754225c h1:u5VJbAKBx6EHMngO3nOANrQ0MQB/A/5QGbHnkcL2z4Y=
+github.com/gn-workshop/prometheus-alertmanager v0.25.1-0.20240731035447-45bc3754225c/go.mod h1:01sXtHoRwI8W324IPAzuxDFOmALqYLCOhvSC2fUHWXc=
 github.com/go-asn1-ber/asn1-ber v1.5.4 h1:vXT6d/FNDiELJnLb6hGNa309LMsrCoYFvpwHDF0+Y1A=
 github.com/go-asn1-ber/asn1-ber v1.5.4/go.mod h1:hEBeB/ic+5LoWskz+yKT7vGhhPYkProFKoKdwZRWMe0=
 github.com/go-fonts/dejavu v0.1.0/go.mod h1:4Wt4I4OU2Nq9asgDCteaAaWZOV24E+0/Pwo0gppep4g=
@@ -2336,8 +2338,8 @@ github.com/grafana/grafana-openapi-client-go v0.0.0-20231213163343-bd475d63fb79/
 github.com/grafana/grafana-plugin-sdk-go v0.114.0/go.mod h1:D7x3ah+1d4phNXpbnOaxa/osSaZlwh9/ZUnGGzegRbk=
 github.com/grafana/grafana-plugin-sdk-go v0.240.0 h1:jhv2TqfBWoi5ZTksg/fdY5Mi8FDsaE8XGxjS1Rgi6nk=
 github.com/grafana/grafana-plugin-sdk-go v0.240.0/go.mod h1:GTw4Fgs9rFe0bR8zmqaTqnVEcQx+Rk5fJvWULyzigCM=
-github.com/grafana/grafana/pkg/apimachinery v0.0.0-20240701190119-78f9c0fd4144 h1:FA9896cLHomvfJcEgTAEhx8q5qGsV1dhuOfnEHM2b+U=
-github.com/grafana/grafana/pkg/apimachinery v0.0.0-20240701190119-78f9c0fd4144/go.mod h1:DkxMin+qOh1Fgkxfbt+CUfBqqsCQJMG9op8Os/irBPA=
+github.com/grafana/grafana/pkg/apimachinery v0.0.0-20240730070047-e20f8c566d8f h1:8xMt7nktj2nmq+A1NrnDqCysHjviec1qACSMSgm837Y=
+github.com/grafana/grafana/pkg/apimachinery v0.0.0-20240730070047-e20f8c566d8f/go.mod h1:m/Tqd1ow+lmYtCj6/UZpejLdP2sxtN/4r6THdzS48r4=
 github.com/grafana/grafana/pkg/apiserver v0.0.0-20240708134731-e9876749d440 h1:833vWSgndCcOXycwCq2Y98W8+W2ouuuhTL+Gf3BNKg8=
 github.com/grafana/grafana/pkg/apiserver v0.0.0-20240708134731-e9876749d440/go.mod h1:qfZc7FEYBdKcxHUTtWtEAH+ArbMIkEQnbVPzr8giY3k=
 github.com/grafana/grafana/pkg/promlib v0.0.6 h1:FuRyHMIgVVXkLuJnCflNfk3gqJflmyiI+/ZuJ9MoAfY=
@@ -2348,8 +2350,6 @@ github.com/grafana/grafana/pkg/util/xorm v0.0.1 h1:72QZjxWIWpSeOF8ob4aMV058kfgZy
 github.com/grafana/grafana/pkg/util/xorm v0.0.1/go.mod h1:eNfbB9f2jM8o9RfwqwjY8SYm5tvowJ8Ly+iE4P9rXII=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
 github.com/grafana/otel-profiling-go v0.5.1/go.mod h1:ftN/t5A/4gQI19/8MoWurBEtC6gFw8Dns1sJZ9W4Tls=
-github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45 h1:AJKOtDKAOg8XNFnIZSmqqqutoTSxVlRs6vekL2p2KEY=
-github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45/go.mod h1:01sXtHoRwI8W324IPAzuxDFOmALqYLCOhvSC2fUHWXc=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.7 h1:C11j63y7gymiW8VugJ9ZW0pWfxTZugdSJyC48olk5KY=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.7/go.mod h1:Tk376Nbldo4Cha9RgiU7ik8WKFkNpfds98aUzS8omLE=
 github.com/grafana/pyroscope/api v0.3.0 h1:WcVKNZ8JlriJnD28wTkZray0wGo8dGkizSJXnbG7Gd8=

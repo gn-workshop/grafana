@@ -89,7 +89,7 @@ require (
 	github.com/grafana/grafana-google-sdk-go v0.1.0 // @grafana/partner-datasources
 	github.com/grafana/grafana-openapi-client-go v0.0.0-20231213163343-bd475d63fb79 // @grafana/grafana-backend-group
 	github.com/grafana/grafana-plugin-sdk-go v0.240.0 // @grafana/plugins-platform-backend
-	github.com/grafana/grafana/pkg/apimachinery v0.0.0-20240701190119-78f9c0fd4144 // @grafana/grafana-app-platform-squad
+	github.com/grafana/grafana/pkg/apimachinery v0.0.0-20240730070047-e20f8c566d8f // @grafana/grafana-app-platform-squad
 	github.com/grafana/grafana/pkg/apiserver v0.0.0-20240708134731-e9876749d440 // @grafana/grafana-app-platform-squad
 	// This needs to be here for other projects that import grafana/grafana
 	// For local development grafana/grafana will always use the local files
@@ -479,7 +479,7 @@ replace github.com/crewjam/saml => github.com/grafana/saml v0.4.15-0.20240523142
 
 // Use our fork of the upstream alertmanagers.
 // This is required in order to get notification delivery errors from the receivers API.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240625192351-66ec17e3aa45
+replace github.com/prometheus/alertmanager => github.com/gn-workshop/prometheus-alertmanager v0.25.1-0.20240731035447-45bc3754225c
 
 exclude github.com/mattn/go-sqlite3 v2.0.3+incompatible
 
